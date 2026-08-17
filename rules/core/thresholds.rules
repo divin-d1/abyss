@@ -1,0 +1,18 @@
+# Abyss core scan thresholds.
+#
+# Tunes the native (compiled) text-heuristic detectors in src/scanner —
+# the detection *logic* is code, these numbers are data, per the
+# ESR/rule-engine design principle in README.md.
+#
+# Baseline weights are informed by polin-guard's public weighted-scoring
+# model (MIT-licensed — Copyright (c) 2026 Valentin Shyaka, polin-guard,
+# github.com/Valentin-Shyaka/polin-guard) but reimplemented natively;
+# thresholds below are Abyss's own starting calibration, not a port.
+
+[thresholds]
+oversized_line_length=1000
+concealment_gap_length=50
+escape_density_min_count=25
+long_token_length=120
+high_entropy_threshold=4.8
+high_entropy_min_line_length=200

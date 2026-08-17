@@ -1,0 +1,225 @@
+# PolinRider campaign IOC pack.
+#
+# Sources (public threat intelligence, cross-referenced across multiple
+# independent research writeups at the time these entries were added; one
+# entry below is a first-hand Defender observation on the Abyss dev host
+# rather than a literature citation, and is labeled as such):
+#   - OpenSourceMalware/PolinRider dossier (no license — IOC strings only,
+#     these are published indicators, not the project's implementation code)
+#   - SafeDep campaign page + astro-config-blockchain-c2-supply-chain writeup
+#   - Sonatype "six npm packages use Ethereum transactions" blog
+#   - Socket.dev PolinRider expansion writeup
+#   - sam1am/anyapk#64 real-world incident disclosure
+#
+# These are literal known-signature matches (RuleType=IOC). They will not
+# catch a renamed/rotated variant — that is precisely why Abyss's native
+# structural/behavioral detectors (src/scanner) exist independent of this
+# file. Do not add new detection *logic* here; this file is signatures only.
+
+[rule]
+id=polinrider.marker.obfuscator.v1
+name=PolinRider obfuscator v1 shuffle marker
+version=1
+type=IOC
+severity=CRITICAL
+confidence=CONFIRMED
+description=Literal shuffle-seed marker string from the original PolinRider obfuscator variant.
+tags=polinrider;campaign;obfuscator-v1
+campaign=PolinRider
+match.contains=rmcej%otb%
+
+[rule]
+id=polinrider.marker.obfuscator.v2
+name=PolinRider obfuscator v2 (rotated) shuffle marker
+version=1
+type=IOC
+severity=CRITICAL
+confidence=CONFIRMED
+description=Literal shuffle-seed marker string from the rotated (April 2026) PolinRider obfuscator variant, published as an evasion response to detection of the v1 marker.
+tags=polinrider;campaign;obfuscator-v2;rotated-variant
+campaign=PolinRider
+match.contains=Cot%3t=shtP
+
+[rule]
+id=polinrider.decoder.v1
+name=PolinRider v1 decoder function name
+version=1
+type=IOC
+severity=HIGH
+confidence=HIGH
+description=Decoder function identifier associated with the PolinRider v1 obfuscator.
+tags=polinrider;campaign;obfuscator-v1
+campaign=PolinRider
+match.contains=_$_1e42
+
+[rule]
+id=polinrider.marker.obfuscator.seed_string
+name=PolinRider obfuscator seed/shuffle-table string
+version=1
+type=IOC
+severity=CRITICAL
+confidence=CONFIRMED
+description=Literal high-entropy seed/shuffle-table string confirmed in PolinRider obfuscator payloads.
+tags=polinrider;campaign;obfuscator
+campaign=PolinRider
+match.contains=wuqktamceigynzbosdctpusocrjhrflovnxrt
+
+[rule]
+id=polinrider.global_marker.v1
+name=PolinRider global campaign marker assignment
+version=2
+type=IOC
+severity=CRITICAL
+confidence=CONFIRMED
+description=Literal `global['!']` campaign-marker assignment used by PolinRider obfuscator variants to select C2 behavior at runtime. Three confirmed marker-value variants are treated as equivalent evidence (any one is sufficient — they are alternate campaign-marker values, not a combination that all need to be present in the same file).
+tags=polinrider;campaign;obfuscator
+campaign=PolinRider
+logic=ANY
+match.contains_any=global['!']='8-270-2';global['!']='9-3800-1';global['!']='9-6187'
+
+[rule]
+id=polinrider.global_marker.v_variant.defender_observed
+name=PolinRider global['_V'] campaign marker (Defender-observed on this host)
+version=1
+type=IOC
+severity=CRITICAL
+confidence=CONFIRMED
+description=Literal `global['_V']` campaign-marker assignment. Unlike the other entries in this file (sourced from published third-party threat intelligence), this exact indicator was observed directly by Windows Defender on the Abyss development host (Microsoft-Windows-Windows Defender/Operational, node.exe -e command line, 2026-08-16 ~21:45-21:56, via Get-MpThreatDetection) and is recorded here as a first-hand, host-confirmed variant rather than a literature citation. It uses a different marker property name (`_V` vs `!`) and a different value prefix (`A9-` vs `9-`) than the previously catalogued variants, consistent with continued campaign rotation. Abyss has no native Defender-log reader in this build (see README.md "Current, verified limitations") — use Windows Security's own Protection History for the underlying detection detail.
+tags=polinrider;campaign;obfuscator;defender-observed;rotated-variant
+campaign=PolinRider
+logic=ANY
+match.contains_any=global['_V']='A9-3800-1';global['_V']='A9-6187'
+
+[rule]
+id=polinrider.c2.tron_wallet.1
+name=Known PolinRider blockchain C2 wallet (TRON)
+version=1
+type=IOC
+severity=CRITICAL
+confidence=CONFIRMED
+description=TRON wallet address documented as PolinRider blockchain C2 dead-drop infrastructure.
+tags=polinrider;campaign;blockchain-c2
+campaign=PolinRider
+match.contains=TMfKQEd7TJJa5xNZJZ2Lep838vrzrs7mAP
+
+[rule]
+id=polinrider.c2.tron_wallet.2
+name=Known PolinRider blockchain C2 wallet (TRON, secondary)
+version=1
+type=IOC
+severity=CRITICAL
+confidence=CONFIRMED
+description=Secondary TRON wallet address documented as PolinRider blockchain C2 dead-drop infrastructure.
+tags=polinrider;campaign;blockchain-c2
+campaign=PolinRider
+match.contains=TXfxHUet9pJVU1BgVkBAbrES4YUc1nGzcG
+
+[rule]
+id=polinrider.c2.ethereum_wallet.1
+name=Known PolinRider blockchain C2 wallet (Ethereum)
+version=1
+type=IOC
+severity=CRITICAL
+confidence=CONFIRMED
+description=Ethereum wallet address documented as PolinRider blockchain C2 dead-drop infrastructure.
+tags=polinrider;campaign;blockchain-c2
+campaign=PolinRider
+match.contains=0xa322E5f3D311D3080e6f0121063e9aDC2490Ef1a
+
+[rule]
+id=polinrider.fake_font.sha256
+name=Known PolinRider fake-font payload (exact hash)
+version=1
+type=IOC
+severity=CRITICAL
+confidence=CONFIRMED
+description=SHA-256 of a confirmed PolinRider fake-font payload (a JavaScript loader shipped with a font-extensioned filename). An exact hash match is the strongest possible static signal — but, per the false-positive philosophy, a hash rule alone still only proves "this exact known-bad file is present," not campaign attribution beyond that file. Renamed or byte-modified copies will NOT match this rule; that is exactly why core.binary_extension_masquerade and core.woff2_trailing_payload (native, hash-independent structural detectors in src/scanner) exist alongside it.
+tags=polinrider;campaign;fake-asset;hash-ioc
+campaign=PolinRider
+match.sha256=b61b4cd5cd1d0cf3caf374e86b3db50a99fa7369a136854620ba372fb77baa43
+
+[rule]
+id=polinrider.c2.xor_key.astro_stage_b
+name=Known PolinRider Stage-B XOR key (astro.config C2 loader)
+version=1
+type=IOC
+severity=HIGH
+confidence=HIGH
+description=Static XOR key documented in the astro.config.mjs blockchain-C2 loader's boot-stage payload decoding.
+tags=polinrider;campaign;blockchain-c2;xor-key
+campaign=PolinRider
+match.contains=ThZG+0jfXE6VAGOJ
+
+[rule]
+id=polinrider.c2.xor_key.resolver
+name=Known PolinRider Stage-A resolver XOR key
+version=1
+type=IOC
+severity=HIGH
+confidence=HIGH
+description=Static XOR key documented in the PolinRider blockchain-relay command resolver stage.
+tags=polinrider;campaign;blockchain-c2;xor-key
+campaign=PolinRider
+match.contains=2[gWfGj;<:-93Z^C
+
+[rule]
+id=polinrider.bootstrap.vercel_hosts
+name=Known PolinRider Vercel-hosted bootstrap host
+version=1
+type=IOC
+severity=CRITICAL
+confidence=HIGH
+description=Hostname of a Vercel-hosted VS Code settings/config "bootstrap" endpoint documented across PolinRider/TasksJacker incidents.
+tags=polinrider;campaign;vscode;bootstrap-c2
+campaign=PolinRider
+match.contains_any=default-configuration.vercel.app;vscode-settings-bootstrap.vercel.app;vscode-settings-config.vercel.app;vscode-bootstrapper.vercel.app;vscode-load-config.vercel.app
+
+[rule]
+id=polinrider.c2.eth_deaddrop_header
+name=Ethereum dead-drop C2 response header + endpoint path
+version=2
+type=IOC
+severity=HIGH
+confidence=HIGH
+description=Combination of the HTTP header name and endpoint path documented for Ethereum-transaction-based dead-drop payload retrieval (Sonatype six-npm-packages campaign, related to PolinRider blockchain C2 techniques). Requires BOTH the header name and one of the endpoint paths (require_all_groups) — either alone is too low-specificity on its own, see README.md.
+tags=polinrider;blockchain-c2;ethereum
+logic=ALL
+match.contains=X-Payload-B64
+match.contains_any=/0x/cls;/0x/ls
+
+[rule]
+id=polinrider.artifact.filename.propagation_scripts
+name=Known PolinRider propagation script filename
+version=1
+type=IOC
+severity=CRITICAL
+confidence=HIGH
+description=Filename matches the batch-script artifacts used by PolinRider's clock-manipulation/amend/force-push Git propagation mechanism.
+tags=polinrider;campaign;git-propagation;batch-artifact
+campaign=PolinRider
+match.filename=temp_auto_push.bat
+match.filename=temp_interactive_push.bat
+
+[rule]
+id=polinrider.artifact.filename.branch_structure
+name=Known PolinRider branch-structure artifact filename
+version=1
+type=IOC
+severity=MEDIUM
+confidence=LOW
+description=Filename matches a PolinRider propagation-tooling artifact name (branch_structure.json). Low confidence alone — this filename is generic enough to appear in unrelated projects; treat as a hint, not confirmation.
+tags=polinrider;campaign;git-propagation
+campaign=PolinRider
+match.filename=branch_structure.json
+
+[rule]
+id=polinrider.artifact.filename.config_bat
+name=Generic config.bat orchestrator artifact filename
+version=1
+type=IOC
+severity=LOW
+confidence=LOW
+description=Filename matches a PolinRider orchestrator artifact name (config.bat). Very low specificity on its own — "config.bat" is a common name for legitimate build scripts. Correlate with git.propagation.clock_amend_force_push_pattern before treating as significant.
+tags=polinrider;campaign;git-propagation;low-specificity
+campaign=PolinRider
+match.filename=config.bat
