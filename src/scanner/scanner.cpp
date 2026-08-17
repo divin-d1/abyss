@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <regex>
 #include <set>
 #include <sstream>
 #include <thread>
@@ -169,6 +170,7 @@ ScanThresholds loadThresholds(const std::string& path) {
         applyStrictSizeThreshold(b, "long_token_length", t.longTokenLength);
         applyStrictDoubleThreshold(b, "high_entropy_threshold", t.highEntropyThreshold);
         applyStrictSizeThreshold(b, "high_entropy_min_line_length", t.highEntropyMinLineLength);
+        applyStrictDoubleThreshold(b, "high_entropy_max_whitespace_ratio", t.highEntropyMaxWhitespaceRatio);
     }
     return t;
 }
@@ -211,6 +213,41 @@ std::size_t longestNonWhitespaceRun(const std::string& line) {
         }
     }
     return best;
+}
+
+// The actual text of the longest unbroken non-whitespace run in `line`
+// (there can be more than one run of the winning length; the first is
+// returned, matching longestNonWhitespaceRun()'s tie-breaking).
+std::string longestNonWhitespaceRunText(const std::string& line) {
+    std::size_t bestStart = 0, bestLen = 0, curStart = 0, curLen = 0;
+    for (std::size_t i = 0; i < line.size(); i++) {
+        if ((unsigned char)line[i] > ' ') {
+            if (curLen == 0) curStart = i;
+            curLen++;
+            if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; }
+        } else {
+            curLen = 0;
+        }
+    }
+    return line.substr(bestStart, bestLen);
+}
+
+// True if `token` is shaped like a URL (a scheme, "://", and more content),
+// allowing at most one leading wrapper character (the quote/bracket the
+// token is embedded in, e.g. `"https://...` inside JSON). A long URL is
+// structured, human-readable text -- a resolved package registry tarball
+// link, a CDN asset link, an image src -- not opaque encoded/compressed
+// payload data, however long and unbroken it is. match_continuous anchors
+// the scheme to the very start (after the optional wrapper) so this can't
+// become a loophole where an opaque blob defeats the detector merely by
+// containing "://" somewhere in its middle.
+bool looksLikeUrl(const std::string& token) {
+    static const std::regex urlPattern(R"([A-Za-z][A-Za-z0-9+.-]{1,15}://\S)");
+    std::size_t start = 0;
+    if (start < token.size() && std::strchr("\"'`([<", token[start]) != nullptr) start++;
+    if (start >= token.size()) return false;
+    return std::regex_search(token.cbegin() + static_cast<std::ptrdiff_t>(start), token.cend(), urlPattern,
+                             std::regex_constants::match_continuous);
 }
 
 std::size_t countEscapeSequences(const std::string& line) {
@@ -355,7 +392,7 @@ std::vector<Finding> scanTextHeuristics(const std::string& relPath, const std::s
         }
 
         std::size_t longest = longestNonWhitespaceRun(line);
-        if (longest >= thresholds.longTokenLength) {
+        if (longest >= thresholds.longTokenLength && !looksLikeUrl(longestNonWhitespaceRunText(line))) {
             findings.push_back(makeFinding(
                 "core.long_token", "Unbroken long token", RuleType::Behavior, Severity::Low, Confidence::Low,
                 "Unbroken non-whitespace run of " + std::to_string(longest) +
@@ -364,14 +401,19 @@ std::vector<Finding> scanTextHeuristics(const std::string& relPath, const std::s
         }
 
         if (line.size() >= thresholds.highEntropyMinLineLength) {
-            double e = shannonEntropyBits(reinterpret_cast<const std::uint8_t*>(line.data()), line.size());
-            if (e >= thresholds.highEntropyThreshold) {
-                std::ostringstream desc;
-                desc << "Line entropy " << e << " bits/char over " << line.size() << " characters.";
-                findings.push_back(makeFinding(
-                    "core.high_entropy_line", "High-entropy line", RuleType::Behavior, Severity::Low,
-                    Confidence::Low, desc.str(), relPath, lineNo, line.substr(0, 80),
-                    {"entropy", "obfuscation-candidate"}));
+            std::size_t whitespaceChars = static_cast<std::size_t>(
+                std::count_if(line.begin(), line.end(), [](unsigned char c) { return c == ' ' || c == '\t'; }));
+            double whitespaceRatio = static_cast<double>(whitespaceChars) / static_cast<double>(line.size());
+            if (whitespaceRatio <= thresholds.highEntropyMaxWhitespaceRatio) {
+                double e = shannonEntropyBits(reinterpret_cast<const std::uint8_t*>(line.data()), line.size());
+                if (e >= thresholds.highEntropyThreshold) {
+                    std::ostringstream desc;
+                    desc << "Line entropy " << e << " bits/char over " << line.size() << " characters.";
+                    findings.push_back(makeFinding(
+                        "core.high_entropy_line", "High-entropy line", RuleType::Behavior, Severity::Low,
+                        Confidence::Low, desc.str(), relPath, lineNo, line.substr(0, 80),
+                        {"entropy", "obfuscation-candidate"}));
+                }
             }
         }
 
@@ -481,19 +523,26 @@ std::vector<Finding> scanCredentialExposure(const std::string& relPath, const st
 
         // The generic "key=value"/"key: value" pattern (as opposed to a
         // fixed-prefix token shape like gh_/AKIA/sk-) cannot itself tell a
-        // real secret literal apart from a bare identifier being assigned —
-        // `api_key: getOption(...)` and `url.password = someVar` match the
-        // same shape as `API_KEY=aB3xY9k2`. Real secret material is
-        // overwhelmingly high-entropy (mixed letters and digits); a value
-        // that's purely alphabetic and underscores, with no digits at all,
-        // reads far more like a variable/function name than a credential —
+        // real secret literal apart from a bare identifier or property-access
+        // chain being assigned — `api_key: getOption(...)`,
+        // `url.password = someVar`, and `currentPassword: e.target.value`
+        // (a completely ordinary React form handler) all match the same
+        // shape as `API_KEY=aB3xY9k2`. Real secret material is overwhelmingly
+        // high-entropy (mixed letters and digits); a value that's purely
+        // alphabetic, underscores, and dots (property-access chains like
+        // `e.target.value` or `localStorage.getItem` — the latter reachable
+        // here because the regex's own function-call guard is itself
+        // defeatable by backtracking into a shorter match, so this
+        // post-filter is the actual backstop for that shape too), with no
+        // digits at all, reads far more like source code than a credential —
         // and this only narrows the generic pattern, not the fixed-prefix
         // token patterns (github/aws/stripe/...), which don't have this
         // ambiguity in the first place.
         if (kind == "credential-value") {
             bool hasDigit = std::any_of(value.begin(), value.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
-            bool isIdentifierShaped =
-                std::all_of(value.begin(), value.end(), [](unsigned char c) { return std::isalpha(c) || c == '_'; });
+            bool isIdentifierShaped = std::all_of(value.begin(), value.end(), [](unsigned char c) {
+                return std::isalpha(c) || c == '_' || c == '.';
+            });
             if (!hasDigit && isIdentifierShaped) return true;
         }
         return false;
@@ -772,6 +821,27 @@ bool isZeroWidthOrVariationOrPua(std::uint32_t cp) {
     return false;
 }
 
+// True for codepoints that legitimately serve as the base character of a
+// standard emoji sequence -- a variation selector (U+FE0F/FE0E) or ZWJ
+// (U+200D) immediately following one of these is participating in an
+// ordinary, human-visible emoji (an emoji picker, a reaction list, a
+// decorative icon in JSX) rather than being smuggled into plain text to
+// steganographically encode data or defeat string matching. This is not a
+// blanket exemption: zero-width space/non-joiner (U+200B/U+200C) and a
+// standalone word-joiner (U+2060), and any variation selector/ZWJ that is
+// NOT adjacent to an emoji base, are still always flagged -- those have no
+// legitimate use in typical source/config text and are exactly the
+// concealment shape this detector exists to catch.
+bool isLikelyEmojiBase(std::uint32_t cp) {
+    if (cp >= 0x2600 && cp <= 0x27BF) return true;    // Misc Symbols + Dingbats (❤ ✌ ☝ ✍ ☺ …)
+    if (cp >= 0x2B00 && cp <= 0x2BFF) return true;    // Misc Symbols and Arrows (⭐ ➡ …)
+    if (cp >= 0x2190 && cp <= 0x21FF) return true;    // Arrows (↔ used with VS16 in some emoji)
+    if (cp >= 0x1F1E6 && cp <= 0x1F1FF) return true;  // regional indicators (flag emoji)
+    if (cp >= 0x1F300 && cp <= 0x1FAFF) return true;  // Misc Symbols/Pictographs, Emoticons, Transport, …
+    if (cp == 0x23 || cp == 0x2A || (cp >= 0x30 && cp <= 0x39)) return true; // keycap bases # * 0-9
+    return false;
+}
+
 } // namespace
 
 std::vector<Finding> scanInvisibleUnicode(const std::string& relPath, const std::string& content) {
@@ -792,8 +862,12 @@ std::vector<Finding> scanInvisibleUnicode(const std::string& relPath, const std:
             if (bidiCount == 0) firstBidiOffset = offset;
             bidiCount++;
         } else if (isZeroWidthOrVariationOrPua(cp)) {
-            if (concealCount == 0) firstConcealOffset = offset;
-            concealCount++;
+            const bool isEmojiSequenceJoiner = (cp == 0x200D || (cp >= 0xFE00 && cp <= 0xFE0F)) &&
+                                               idx > 0 && isLikelyEmojiBase(codepoints[idx - 1].codepoint);
+            if (!isEmojiSequenceJoiner) {
+                if (concealCount == 0) firstConcealOffset = offset;
+                concealCount++;
+            }
         }
     }
 

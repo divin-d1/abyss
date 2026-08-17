@@ -52,6 +52,16 @@ struct ScanThresholds {
     std::size_t longTokenLength = 120;         // unbroken non-whitespace run
     double highEntropyThreshold = 4.8;         // bits/char, Shannon
     std::size_t highEntropyMinLineLength = 200;
+    // Real encoded/obfuscated payloads are overwhelmingly a single unbroken
+    // token (that is what makes them high-entropy over the whole line in
+    // the first place) — legitimate dense-but-readable lines (long Tailwind
+    // className strings, JSX with many short attributes) still have normal
+    // word-spacing. A line with more than this fraction of horizontal
+    // whitespace is exempted from the entropy check even if it crosses
+    // highEntropyThreshold, since long_token already separately catches the
+    // single-unbroken-run shape this detector is meant to complement, not
+    // duplicate.
+    double highEntropyMaxWhitespaceRatio = 0.10;
 
     static ScanThresholds withDefaults() { return ScanThresholds{}; }
 };
