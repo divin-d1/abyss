@@ -1,0 +1,12 @@
+build/
+build-*/
+*.obj
+*.ilk
+*.pdb
+*.lib
+.cache/
+compile_commands.json
+release-package/
+release-*/
+*.zip
+abyss-results/
