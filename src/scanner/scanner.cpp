@@ -520,7 +520,7 @@ std::vector<Finding> scanCredentialExposure(const std::string& relPath, const st
         static const std::vector<std::string> credentialFileNames = {
             "id_rsa", "id_ecdsa", "id_ed25519", ".npmrc", ".git-credentials", ".pgpass",
         };
-        std::string base = fs::path(relPath).filename().string();
+        std::string base = pathToUtf8(fs::path(relPath).filename());
         for (const auto& name : credentialFileNames) {
             if (base == name) {
                 findings.push_back(makeFinding(
@@ -873,11 +873,11 @@ RepositoryDiscovery discoverRepository(const std::string& root) {
             fs::path target = fs::weakly_canonical(p, resolveEc);
             bool within = !resolveEc && pathStartsWith(target, canonicalRoot);
             if (resolveEc || !within) {
-                result.symlinkEscapesSkipped.push_back(normalizeSlashes(p.string()));
+                result.symlinkEscapesSkipped.push_back(normalizeSlashes(pathToUtf8(p)));
                 it.disable_recursion_pending();
                 std::error_code incEc;
                 it.increment(incEc);
-                if (incEc) { result.directoryErrors.push_back(p.string() + ": " + incEc.message()); break; }
+                if (incEc) { result.directoryErrors.push_back(pathToUtf8(p) + ": " + incEc.message()); break; }
                 continue;
             }
             // In-root symlink target: still never followed as a directory
@@ -887,7 +887,7 @@ RepositoryDiscovery discoverRepository(const std::string& root) {
         std::error_code typeEc;
         bool isDir = it->is_directory(typeEc);
         if (typeEc) {
-            result.directoryErrors.push_back(p.string() + ": " + typeEc.message());
+            result.directoryErrors.push_back(pathToUtf8(p) + ": " + typeEc.message());
             std::error_code incEc;
             it.increment(incEc);
             if (incEc) break;
@@ -913,7 +913,7 @@ RepositoryDiscovery discoverRepository(const std::string& root) {
             }
             std::error_code incEc;
             it.increment(incEc);
-            if (incEc) { result.directoryErrors.push_back(p.string() + ": " + incEc.message()); break; }
+            if (incEc) { result.directoryErrors.push_back(pathToUtf8(p) + ": " + incEc.message()); break; }
             continue;
         }
 
@@ -927,12 +927,12 @@ RepositoryDiscovery discoverRepository(const std::string& root) {
         }
 
         DiscoveredFile df;
-        df.absolutePath = p.string();
+        df.absolutePath = pathToUtf8(p);
         std::error_code relEc;
         auto rel = fs::relative(p, rootPath, relEc);
-        df.relativePath = normalizeSlashes(relEc ? p.string() : rel.string());
-        df.filename = p.filename().string();
-        std::string ext = p.extension().string();
+        df.relativePath = normalizeSlashes(relEc ? pathToUtf8(p) : pathToUtf8(rel));
+        df.filename = pathToUtf8(p.filename());
+        std::string ext = pathToUtf8(p.extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
         df.extensionLower = ext;
         df.isSymlink = isSym;
@@ -940,7 +940,7 @@ RepositoryDiscovery discoverRepository(const std::string& root) {
 
         std::error_code incEc;
         it.increment(incEc);
-        if (incEc) { result.directoryErrors.push_back(p.string() + ": " + incEc.message()); break; }
+        if (incEc) { result.directoryErrors.push_back(pathToUtf8(p) + ": " + incEc.message()); break; }
     }
     return result;
 }

@@ -325,7 +325,7 @@ std::string defaultExtensionsRoot() {
     std::string home = getEnvVar("USERPROFILE");
     if (home.empty()) return {};
     fs::path p = fs::path(home) / ".vscode" / "extensions";
-    return p.string();
+    return pathToUtf8(p);
 }
 
 std::vector<ExtensionRecord> discoverExtensions(const std::string& extensionsRoot) {
@@ -352,7 +352,7 @@ std::vector<ExtensionRecord> discoverExtensions(const std::string& extensionsRoo
 
         std::vector<std::uint8_t> bytes;
         bool truncated = false;
-        if (!readFileBytes(manifestPath.string(), bytes, truncated, 8ull * 1024 * 1024)) continue;
+        if (!readFileBytes(pathToUtf8(manifestPath), bytes, truncated, 8ull * 1024 * 1024)) continue;
 
         // A malformed manifest is skipped, never a crash — extensions are
         // third-party-authored data we don't control the shape of.
@@ -360,7 +360,7 @@ std::vector<ExtensionRecord> discoverExtensions(const std::string& extensionsRoo
         if (!parsed.ok || !parsed.value.isObject()) continue;
 
         ExtensionRecord rec;
-        rec.path = entry.path().string();
+        rec.path = pathToUtf8(entry.path());
         rec.name = parsed.value.find("name") ? parsed.value.find("name")->asStringOr("") : "";
         rec.publisher = parsed.value.find("publisher") ? parsed.value.find("publisher")->asStringOr("") : "";
         rec.version = parsed.value.find("version") ? parsed.value.find("version")->asStringOr("") : "";

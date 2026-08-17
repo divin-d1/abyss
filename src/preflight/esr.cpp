@@ -30,11 +30,11 @@ EsrLoadResult loadExecutionSurfaces(const std::string& dir) {
         if (it->path().extension() != ".esr") continue;
 
         std::ifstream f(it->path(), std::ios::binary);
-        if (!f) { result.errors.push_back(it->path().string() + ": could not open"); continue; }
+        if (!f) { result.errors.push_back(pathToUtf8(it->path()) + ": could not open"); continue; }
         std::ostringstream ss;
         ss << f.rdbuf();
         auto parsed = parseBlocks(ss.str());
-        if (!parsed.ok) { result.errors.push_back(it->path().string() + ": " + parsed.error); continue; }
+        if (!parsed.ok) { result.errors.push_back(pathToUtf8(it->path()) + ": " + parsed.error); continue; }
 
         for (const auto& b : parsed.blocks) {
             if (b.section != "execution-surface") continue;
@@ -44,9 +44,9 @@ EsrLoadResult loadExecutionSurfaces(const std::string& dir) {
             surface.patterns = Block::splitList(b.get("patterns"));
             surface.risk = b.get("risk");
             surface.autoload = lower(b.get("autoload", "false")) == "true";
-            surface.sourceFile = it->path().string();
+            surface.sourceFile = pathToUtf8(it->path());
             if (surface.id.empty() || surface.patterns.empty()) {
-                result.errors.push_back(it->path().string() + ": execution-surface missing id/patterns");
+                result.errors.push_back(pathToUtf8(it->path()) + ": execution-surface missing id/patterns");
                 continue;
             }
             result.surfaces.push_back(std::move(surface));

@@ -44,19 +44,19 @@ std::string exeDirectory() {
 #if defined(_WIN32)
     char buf[MAX_PATH];
     DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    if (n == 0 || n == MAX_PATH) return fs::current_path().string();
-    return fs::path(buf).parent_path().string();
+    if (n == 0 || n == MAX_PATH) return pathToUtf8(fs::current_path());
+    return pathToUtf8(fs::path(buf).parent_path());
 #else
     std::error_code ec;
     fs::path executable = fs::read_symlink("/proc/self/exe", ec);
-    return ec ? fs::current_path().string() : executable.parent_path().string();
+    return ec ? pathToUtf8(fs::current_path()) : pathToUtf8(executable.parent_path());
 #endif
 }
 
 std::string programDataRulesDir() {
     std::string pd = getEnvVar("ProgramData");
     if (pd.empty()) return {};
-    return (fs::path(pd) / "Abyss" / "rules").string();
+    return pathToUtf8((fs::path(pd) / "Abyss" / "rules"));
 }
 
 // Official rule search: exactly two deterministic candidates — the rules/
@@ -70,10 +70,10 @@ std::string programDataRulesDir() {
 std::string findOfficialRulesDirectory() {
     fs::path installRelative = fs::path(exeDirectory()) / "rules";
     std::error_code ec;
-    if (fs::exists(installRelative, ec)) return fs::weakly_canonical(installRelative, ec).string();
+    if (fs::exists(installRelative, ec)) return pathToUtf8(fs::weakly_canonical(installRelative, ec));
 
     std::string pd = programDataRulesDir();
-    if (!pd.empty() && fs::exists(pd, ec)) return fs::weakly_canonical(pd, ec).string();
+    if (!pd.empty() && fs::exists(pd, ec)) return pathToUtf8(fs::weakly_canonical(pd, ec));
 
     return {};
 }
@@ -234,13 +234,13 @@ LoadedEngine loadEngine(const std::string& explicitOverrideDir) {
 
     std::vector<rules::Rule> allRules;
     for (const auto& sub : {"core", "filetypes", "git", "vscode", "execution-surfaces", "campaigns"}) {
-        auto res = rules::loadRulesFromDirectory((fs::path(loaded.rulesDir) / sub).string());
+        auto res = rules::loadRulesFromDirectory(pathToUtf8((fs::path(loaded.rulesDir) / sub)));
         allRules.insert(allRules.end(), res.rules.begin(), res.rules.end());
         loaded.loadErrors.insert(loaded.loadErrors.end(), res.errors.begin(), res.errors.end());
     }
     loaded.thresholds =
-        scanner::loadThresholds((fs::path(loaded.rulesDir) / "core" / "thresholds.rules").string());
-    auto esrRes = preflight::loadExecutionSurfaces((fs::path(loaded.rulesDir) / "execution-surfaces").string());
+        scanner::loadThresholds(pathToUtf8((fs::path(loaded.rulesDir) / "core" / "thresholds.rules")));
+    auto esrRes = preflight::loadExecutionSurfaces(pathToUtf8((fs::path(loaded.rulesDir) / "execution-surfaces")));
     loaded.esr = preflight::ExecutionSurfaceRegistry(esrRes.surfaces);
     loaded.loadErrors.insert(loaded.loadErrors.end(), esrRes.errors.begin(), esrRes.errors.end());
 
@@ -300,7 +300,7 @@ std::string writeReportFile(const std::string& resultsBaseDir, const std::string
     out.flush();
     bool ok = static_cast<bool>(out);
     out.close();
-    return ok ? resultsFile.string() : std::string{};
+    return ok ? pathToUtf8(resultsFile) : std::string{};
 }
 
 // Writes the full report to <resultsBaseDir>/abyss-results/results.txt and
@@ -443,7 +443,7 @@ int cmdScan(const std::string& path, bool jsonOutput, const std::string& rulesOv
         std::cerr << "[verdict] " << run.verdict.label << " (exit " << (int)run.verdict.exitCode
                    << "): " << run.verdict.explanation << "\n";
     } else {
-        reportTo(path, fs::absolute(path).string(), run.report.findings, run.report.coverage,
+        reportTo(path, pathToUtf8(fs::absolute(path)), run.report.findings, run.report.coverage,
                 run.trust, run.verdict);
     }
 
@@ -519,7 +519,7 @@ int cmdRemediate(const std::string& path, const std::string& rulesOverride,
     }
     auto before = runScan(path, rulesOverride);
     if (verifyOnly) {
-        reportTo(path, fs::absolute(path).string(), before.report.findings, before.report.coverage,
+        reportTo(path, pathToUtf8(fs::absolute(path)), before.report.findings, before.report.coverage,
                 before.trust, before.verdict);
         if (before.verdict.label == "ALLOW") std::cout << "Verification result: VERIFIED for the requested scope.\n";
         return static_cast<int>(before.verdict.exitCode);
@@ -561,7 +561,7 @@ int cmdRemediate(const std::string& path, const std::string& rulesOverride,
 
     auto after = runScan(path, rulesOverride);
     std::cout << "\nPOST-REMEDIATION VERIFICATION\n=============================\n";
-    reportTo(path, fs::absolute(path).string(), after.report.findings, after.report.coverage,
+    reportTo(path, pathToUtf8(fs::absolute(path)), after.report.findings, after.report.coverage,
             after.trust, after.verdict);
     if (after.verdict.label == "ALLOW") return 0;
     // Something genuinely was quarantined above, and the project still
@@ -602,7 +602,7 @@ int cmdPreflight(const std::string& path, const std::string& rulesOverride) {
     auto run = runScan(path, rulesOverride);
 
     std::cout << "ABYSS PREFLIGHT\n===============\n";
-    std::cout << "Target: " << sanitizeForOutput(fs::absolute(path).string()) << "\n\n";
+    std::cout << "Target: " << sanitizeForOutput(pathToUtf8(fs::absolute(path))) << "\n\n";
 
     // The decision IS the verdict's own label — ALLOW / REVIEW / BLOCK /
     // INCOMPLETE — never collapsed into a two-state allow/block boolean.
@@ -629,7 +629,7 @@ int cmdOpen(const std::string& path, const std::string& rulesOverride) {
     auto run = runScan(path, rulesOverride);
 
     std::cout << "ABYSS OPEN — preflight gate\n===========================\n";
-    std::cout << "Target: " << sanitizeForOutput(fs::absolute(path).string()) << "\n\n";
+    std::cout << "Target: " << sanitizeForOutput(pathToUtf8(fs::absolute(path))) << "\n\n";
     std::cout << "Decision: " << run.verdict.label << "\n";
     std::cout << "Detail:   " << run.verdict.explanation << "\n\n";
 
@@ -731,7 +731,7 @@ int cmdSelfScan() {
         staged = !ec;
     }
 
-    std::string target = staged ? stageDir.string() : exeDir;
+    std::string target = staged ? pathToUtf8(stageDir) : exeDir;
     std::cout << "Abyss self-scan\n================\n";
     std::cout << "Scanning installation layout: " << sanitizeForOutput(target) << "\n";
     if (staged) {
@@ -792,7 +792,7 @@ void printCredentialRecoveryChecklist() {
 bool isAbyssToolDirectory(const fs::path& candidate, const fs::path& ownDirectory) {
     if (!ownDirectory.empty() && candidate == ownDirectory) return true;
 
-    std::string directoryName = candidate.filename().string();
+    std::string directoryName = pathToUtf8(candidate.filename());
     std::transform(directoryName.begin(), directoryName.end(), directoryName.begin(),
                    [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
     if (directoryName != "abyss") return false;
@@ -823,7 +823,7 @@ int cmdScanAll(const std::string& parent, const std::string& rulesOverride, bool
     bool credentialRisk = false;
 
     std::cout << "ABYSS MULTI-PROJECT SCAN\n========================\n";
-    std::cout << "Parent: " << sanitizeForOutput(parentPath.string()) << "\n\n";
+    std::cout << "Parent: " << sanitizeForOutput(pathToUtf8(parentPath)) << "\n\n";
     for (fs::directory_iterator it(parentPath, fs::directory_options::skip_permission_denied, ec), end;
          it != end; it.increment(ec)) {
         if (ec) { std::cerr << "[coverage] " << sanitizeForOutput(ec.message()) << "\n"; ec.clear(); continue; }
@@ -831,16 +831,16 @@ int cmdScanAll(const std::string& parent, const std::string& rulesOverride, bool
         fs::path candidate = fs::weakly_canonical(it->path(), ec);
         if (ec) { ec.clear(); continue; }
         if (isAbyssToolDirectory(candidate, ownDirectory)) {
-            projects.push_back({candidate.filename().string(), {}, "SKIPPED TOOL DIRECTORY"});
+            projects.push_back({pathToUtf8(candidate.filename()), {}, "SKIPPED TOOL DIRECTORY"});
             continue;
         }
-        std::cout << "Scanning " << sanitizeForOutput(candidate.filename().string()) << "...\n";
-        auto run = runScanWithEngine(candidate.string(), loaded);
+        std::cout << "Scanning " << sanitizeForOutput(pathToUtf8(candidate.filename())) << "...\n";
+        auto run = runScanWithEngine(pathToUtf8(candidate), loaded);
         credentialRisk = credentialRisk || hasCredentialExposure(run.report.findings);
-        projects.push_back({candidate.filename().string(), candidate.string(), run.verdict.label});
+        projects.push_back({pathToUtf8(candidate.filename()), pathToUtf8(candidate), run.verdict.label});
         if (verdictPriority(run.verdict.exitCode) > verdictPriority(finalCode)) finalCode = run.verdict.exitCode;
         if (run.verdict.label != "ALLOW") {
-            reportTo(candidate.string(), candidate.string(), run.report.findings, run.report.coverage,
+            reportTo(pathToUtf8(candidate), pathToUtf8(candidate), run.report.findings, run.report.coverage,
                     run.trust, run.verdict);
             std::cout << "\n";
         }
@@ -863,13 +863,13 @@ int cmdScanAll(const std::string& parent, const std::string& rulesOverride, bool
     }
     bool looseFilesBlocked = false;
     if (looseFiles > 0) {
-        auto loose = runScanWithEngine(looseStage.string(), loaded);
+        auto loose = runScanWithEngine(pathToUtf8(looseStage), loaded);
         credentialRisk = credentialRisk || hasCredentialExposure(loose.report.findings);
         projects.push_back({"files stored directly in parent", {}, loose.verdict.label});
         looseFilesBlocked = loose.verdict.label == "BLOCK";
         if (verdictPriority(loose.verdict.exitCode) > verdictPriority(finalCode)) finalCode = loose.verdict.exitCode;
         if (loose.verdict.label != "ALLOW") {
-            reportTo(parentPath.string(), parentPath.string() + " direct files", loose.report.findings,
+            reportTo(pathToUtf8(parentPath), pathToUtf8(parentPath) + " direct files", loose.report.findings,
                     loose.report.coverage, loose.trust, loose.verdict);
             std::cout << "\n";
         }
@@ -897,11 +897,11 @@ int cmdScanAll(const std::string& parent, const std::string& rulesOverride, bool
             cmdRemediate(projectPath, rulesOverride, true, false);
         }
         if (looseFilesBlocked) {
-            std::cout << "\nFiles stored directly in " << sanitizeForOutput(parentPath.string())
+            std::cout << "\nFiles stored directly in " << sanitizeForOutput(pathToUtf8(parentPath))
                       << " were BLOCKED but are not auto-cleaned by scan-all — run `abyss contain \""
-                      << sanitizeForOutput(parentPath.string()) << "\"` to review and quarantine them.\n";
+                      << sanitizeForOutput(pathToUtf8(parentPath)) << "\"` to review and quarantine them.\n";
         }
-        std::cout << "\nRun `abyss scan-all \"" << sanitizeForOutput(parentPath.string())
+        std::cout << "\nRun `abyss scan-all \"" << sanitizeForOutput(pathToUtf8(parentPath))
                   << "\"` again to confirm every project now reaches ALLOW.\n";
     } else if (finalCode != evidence::ExitCode::Clean) {
         std::cout << "\nNEXT ACTION\n===========\n";
@@ -1113,7 +1113,7 @@ int cmdProtect(const std::string& root) {
     // an explicit, visible action.
     auto preflight = runScan(root, "");
     if (preflight.verdict.label != "ALLOW") {
-        reportTo(root, fs::absolute(root).string(), preflight.report.findings,
+        reportTo(root, pathToUtf8(fs::absolute(root)), preflight.report.findings,
                 preflight.report.coverage, preflight.trust, preflight.verdict);
         std::cerr << "Protection refused until this project reaches ALLOW. Clean or review it first.\n";
         return static_cast<int>(preflight.verdict.exitCode);
@@ -1134,7 +1134,7 @@ int cmdProtect(const std::string& root) {
     }
     std::vector<std::string> messages;
     if (fs::is_directory(fs::path(root) / ".git") &&
-        !response::installRepositoryGuards(root, (fs::path(exeDirectory()) / "abyss.exe").string(), messages, error)) {
+        !response::installRepositoryGuards(root, pathToUtf8((fs::path(exeDirectory()) / "abyss.exe")), messages, error)) {
         std::string rollbackError;
         response::removeProtectedRoot(response::defaultStateRoot(), root, rollbackError);
         if (response::protectedRoots(response::defaultStateRoot(), nullptr).empty()) removeProtectionService(rollbackError);
@@ -1142,7 +1142,7 @@ int cmdProtect(const std::string& root) {
         return static_cast<int>(evidence::ExitCode::OperationalFailure);
     }
     for (const auto& message : messages) std::cout << sanitizeForOutput(message) << "\n";
-    std::cout << "Protection enabled for " << sanitizeForOutput(fs::absolute(root).string()) << ".\n";
+    std::cout << "Protection enabled for " << sanitizeForOutput(pathToUtf8(fs::absolute(root))) << ".\n";
     return 0;
 }
 
@@ -1154,7 +1154,7 @@ int cmdUnprotect(const std::string& root) {
     }
     std::vector<std::string> messages;
     if (fs::is_directory(fs::path(root) / ".git") &&
-        !response::removeRepositoryGuards(root, (fs::path(exeDirectory()) / "abyss.exe").string(), messages, error)) {
+        !response::removeRepositoryGuards(root, pathToUtf8((fs::path(exeDirectory()) / "abyss.exe")), messages, error)) {
         std::cerr << "Protection state was removed but Git guard cleanup failed: " << sanitizeForOutput(error) << "\n";
         return static_cast<int>(evidence::ExitCode::OperationalFailure);
     }
@@ -1253,7 +1253,7 @@ void runPostScanMenu(const std::string& path, ScanRun run) {
             printCredentialRecoveryChecklist();
         } else if (choice == "2") {
             run = runScan(path, "");
-            reportTo(path, fs::absolute(path).string(), run.report.findings,
+            reportTo(path, pathToUtf8(fs::absolute(path)), run.report.findings,
                     run.report.coverage, run.trust, run.verdict);
             currentVerdict = run.verdict.label;
             credentialRisk = hasCredentialExposure(run.report.findings);
@@ -1275,7 +1275,7 @@ void runInteractiveScanOne(const std::string& path) {
         return;
     }
     auto run = runScan(path, "");
-    reportTo(path, fs::absolute(path).string(), run.report.findings,
+    reportTo(path, pathToUtf8(fs::absolute(path)), run.report.findings,
             run.report.coverage, run.trust, run.verdict);
     runPostScanMenu(path, std::move(run));
 }
@@ -1390,7 +1390,17 @@ int runInteractiveMenu() {
 
 } // namespace
 
-int main(int argc, char** argv) {
+// Does the actual work of dispatching a command. Split out from main() so
+// that main() itself can stay a thin try/catch shell -- every code path
+// below eventually walks the filesystem, the registry, or another process's
+// state (system-scan in particular touches the whole machine, not just one
+// project), and std::filesystem/Win32-wrapping code throughout this project
+// is not 100% exception-free at every call site. An uncaught exception here
+// must never reach the CRT's default terminate handler: that shows up to a
+// user as the whole process silently vanishing (Windows logs it as
+// exception 0xc0000409, which looks like a stack-buffer overrun but is
+// actually just abort() being called from std::terminate()).
+int runAbyss(int argc, char** argv) {
 #if defined(_WIN32)
     // Source is compiled /utf-8, so string literals (including the em
     // dashes used throughout finding descriptions and the interactive
@@ -1498,4 +1508,20 @@ int main(int argc, char** argv) {
     std::cerr << "abyss: unknown command '" << command << "'\n\n";
     printUsage();
     return 2;
+}
+
+int main(int argc, char** argv) {
+    try {
+        return runAbyss(argc, argv);
+    } catch (const std::exception& e) {
+        std::cerr << "\nabyss: an unexpected internal error stopped this run: " << e.what()
+                  << "\nThis is a bug -- nothing was left half-modified, but the result above "
+                     "(if any) is incomplete and should not be trusted.\n";
+        return static_cast<int>(evidence::ExitCode::OperationalFailure);
+    } catch (...) {
+        std::cerr << "\nabyss: an unexpected internal error (unknown exception) stopped this run."
+                     "\nThis is a bug -- nothing was left half-modified, but the result above "
+                     "(if any) is incomplete and should not be trusted.\n";
+        return static_cast<int>(evidence::ExitCode::OperationalFailure);
+    }
 }

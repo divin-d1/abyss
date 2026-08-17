@@ -191,7 +191,7 @@ RuleLoadResult loadRulesFromDirectory(const std::string& dir) {
         if (ec) break;
         if (!it->is_regular_file(ec)) continue;
         if (it->path().extension() != ".rules") continue;
-        auto sub = loadRulesFromFile(it->path().string());
+        auto sub = loadRulesFromFile(pathToUtf8(it->path()));
         result.rules.insert(result.rules.end(), sub.rules.begin(), sub.rules.end());
         result.errors.insert(result.errors.end(), sub.errors.begin(), sub.errors.end());
     }
@@ -424,8 +424,8 @@ ManifestVerification verifyRuleManifest(const std::string& rulesDir) {
 
     std::vector<std::uint8_t> manifestBytes;
     bool truncated = false;
-    if (!readFileBytes(manifestPath.string(), manifestBytes, truncated, 8ull * 1024 * 1024)) {
-        result.errors.push_back(manifestPath.string() + ": could not read manifest file");
+    if (!readFileBytes(pathToUtf8(manifestPath), manifestBytes, truncated, 8ull * 1024 * 1024)) {
+        result.errors.push_back(pathToUtf8(manifestPath) + ": could not read manifest file");
         return result;
     }
     result.manifestReadable = true;
@@ -493,7 +493,7 @@ ManifestVerification verifyRuleManifest(const std::string& rulesDir) {
     fs::recursive_directory_iterator it(rulesDirCanonical, fs::directory_options::skip_permission_denied, ec);
     fs::recursive_directory_iterator endIt;
     if (ec) {
-        result.errors.push_back(rulesDirCanonical.string() + ": " + ec.message());
+        result.errors.push_back(pathToUtf8(rulesDirCanonical) + ": " + ec.message());
     } else {
         while (it != endIt) {
             std::error_code symEc;
@@ -502,14 +502,14 @@ ManifestVerification verifyRuleManifest(const std::string& rulesDir) {
                 it.disable_recursion_pending();
                 std::error_code incEc;
                 it.increment(incEc);
-                if (incEc) { result.errors.push_back(it->path().string() + ": " + incEc.message()); break; }
+                if (incEc) { result.errors.push_back(pathToUtf8(it->path()) + ": " + incEc.message()); break; }
                 continue;
             }
 
             std::error_code typeEc;
             bool isRegular = it->is_regular_file(typeEc);
             if (typeEc) {
-                result.errors.push_back(it->path().string() + ": " + typeEc.message());
+                result.errors.push_back(pathToUtf8(it->path()) + ": " + typeEc.message());
                 std::error_code incEc;
                 it.increment(incEc);
                 if (incEc) break;
@@ -519,14 +519,14 @@ ManifestVerification verifyRuleManifest(const std::string& rulesDir) {
                 auto ext = it->path().extension();
                 if (ext == ".rules" || ext == ".esr") {
                     std::error_code relEc;
-                    std::string rel = fs::relative(it->path(), rulesDirCanonical, relEc).string();
+                    std::string rel = pathToUtf8(fs::relative(it->path(), rulesDirCanonical, relEc));
                     std::replace(rel.begin(), rel.end(), '\\', '/');
                     if (!listedRelPaths.count(rel)) result.untracked.push_back(rel);
                 }
             }
             std::error_code incEc;
             it.increment(incEc);
-            if (incEc) { result.errors.push_back(it->path().string() + ": " + incEc.message()); break; }
+            if (incEc) { result.errors.push_back(pathToUtf8(it->path()) + ": " + incEc.message()); break; }
         }
     }
 

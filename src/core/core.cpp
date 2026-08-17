@@ -893,6 +893,22 @@ bool isReparsePoint(const std::filesystem::path& p) {
 bool isReparsePoint(const std::filesystem::path&) { return false; }
 #endif
 
+#if defined(_WIN32)
+std::string pathToUtf8(const std::filesystem::path& p) {
+    const std::wstring& wide = p.native();
+    if (wide.empty()) return {};
+    int needed = ::WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()),
+                                        nullptr, 0, nullptr, nullptr);
+    if (needed <= 0) return {};
+    std::string out(static_cast<std::size_t>(needed), '\0');
+    ::WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()), out.data(), needed,
+                           nullptr, nullptr);
+    return out;
+}
+#else
+std::string pathToUtf8(const std::filesystem::path& p) { return p.string(); }
+#endif
+
 std::string sanitizeForOutput(const std::string& s, std::size_t maxLen) {
     std::string out;
     out.reserve(std::min(s.size(), maxLen) + 3);

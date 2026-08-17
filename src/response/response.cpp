@@ -31,7 +31,7 @@ namespace {
 std::string canonicalString(const fs::path& path, std::error_code& ec) {
     fs::path p = fs::weakly_canonical(path, ec);
     if (ec) return {};
-    return p.lexically_normal().string();
+    return pathToUtf8(p.lexically_normal());
 }
 
 std::string hexEncode(const std::string& value) {
@@ -78,7 +78,7 @@ std::vector<std::string> split(const std::string& line, char delimiter) {
 std::string fileSha256(const fs::path& path, bool& ok) {
     std::vector<std::uint8_t> bytes;
     bool truncated = false;
-    ok = readFileBytes(path.string(), bytes, truncated, 512ull * 1024 * 1024) && !truncated;
+    ok = readFileBytes(pathToUtf8(path), bytes, truncated, 512ull * 1024 * 1024) && !truncated;
     return ok ? crypto::sha256Hex(bytes) : std::string{};
 }
 
@@ -126,7 +126,7 @@ void addCandidateRoot(std::vector<fs::path>& roots, const fs::path& root) {
 // the bounded, depth-limited discovery walk below — it does not itself
 // recurse.
 bool looksLikeDeveloperRootName(const fs::path& path) {
-    std::string name = path.filename().string();
+    std::string name = pathToUtf8(path.filename());
     std::transform(name.begin(), name.end(), name.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     static constexpr const char* indicators[] = {
@@ -209,9 +209,9 @@ Finding networkFinding(const std::string& location, const std::string& evidence)
 std::string defaultStateRoot() {
 #if defined(_WIN32)
     std::string programData = getEnvVar("ProgramData");
-    if (!programData.empty()) return (fs::path(programData) / "Abyss").string();
+    if (!programData.empty()) return pathToUtf8((fs::path(programData) / "Abyss"));
 #endif
-    return (fs::temp_directory_path() / "Abyss-development-state").string();
+    return pathToUtf8((fs::temp_directory_path() / "Abyss-development-state"));
 }
 
 HostDiscovery discoverHostTargets(std::size_t maxDepth, std::size_t maxDirectories) {
@@ -302,14 +302,14 @@ HostDiscovery discoverHostTargets(std::size_t maxDepth, std::size_t maxDirectori
 
             fs::directory_iterator it(current.path, fs::directory_options::skip_permission_denied, ec), end;
             if (ec) {
-                result.errors.push_back(current.path.string() + ": " + ec.message());
+                result.errors.push_back(pathToUtf8(current.path) + ": " + ec.message());
                 ec.clear();
                 continue;
             }
             for (; it != end; it.increment(ec)) {
-                if (ec) { result.errors.push_back(current.path.string() + ": " + ec.message()); ec.clear(); continue; }
+                if (ec) { result.errors.push_back(pathToUtf8(current.path) + ": " + ec.message()); ec.clear(); continue; }
                 const fs::path p = it->path();
-                const std::string name = p.filename().string();
+                const std::string name = pathToUtf8(p.filename());
                 if (name == ".git" || name == "node_modules" || name == ".cache" ||
                     name == "AppData" || name == "$Recycle.Bin" || name == "System Volume Information") continue;
                 std::error_code typeEc;
@@ -365,10 +365,10 @@ std::vector<Finding> inspectPersistence() {
         for (fs::directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end; it != end; it.increment(ec)) {
             if (ec) { ec.clear(); continue; }
             std::vector<std::uint8_t> bytes; bool truncated = false;
-            if (readFileBytes(it->path().string(), bytes, truncated, 2 * 1024 * 1024) && !truncated) {
+            if (readFileBytes(pathToUtf8(it->path()), bytes, truncated, 2 * 1024 * 1024) && !truncated) {
                 std::string text = bytesToStringLossy(bytes);
-                if (looksSuspiciousLaunchValue(text) || looksSuspiciousLaunchValue(it->path().filename().string()))
-                    findings.push_back(persistenceFinding(it->path().string(), text.substr(0, 240)));
+                if (looksSuspiciousLaunchValue(text) || looksSuspiciousLaunchValue(pathToUtf8(it->path().filename())))
+                    findings.push_back(persistenceFinding(pathToUtf8(it->path()), text.substr(0, 240)));
             }
         }
     }
@@ -384,10 +384,10 @@ std::vector<Finding> inspectPersistence() {
             if (ec) { ec.clear(); continue; }
             if (!it->is_regular_file(ec)) continue;
             std::vector<std::uint8_t> bytes; bool truncated = false;
-            if (readFileBytes(it->path().string(), bytes, truncated, 2 * 1024 * 1024) && !truncated) {
+            if (readFileBytes(pathToUtf8(it->path()), bytes, truncated, 2 * 1024 * 1024) && !truncated) {
                 std::string text = bytesToStringLossy(bytes);
                 if (looksSuspiciousLaunchValue(text))
-                    findings.push_back(persistenceFinding("Scheduled task: " + it->path().string(), text.substr(0, 240)));
+                    findings.push_back(persistenceFinding("Scheduled task: " + pathToUtf8(it->path()), text.substr(0, 240)));
             }
         }
     }
@@ -403,10 +403,10 @@ std::vector<Finding> inspectPersistence() {
         };
         for (const auto& profile : profiles) {
             std::vector<std::uint8_t> bytes; bool truncated = false;
-            if (readFileBytes(profile.string(), bytes, truncated, 2 * 1024 * 1024) && !truncated) {
+            if (readFileBytes(pathToUtf8(profile), bytes, truncated, 2 * 1024 * 1024) && !truncated) {
                 std::string text = bytesToStringLossy(bytes);
                 if (looksSuspiciousLaunchValue(text))
-                    findings.push_back(persistenceFinding("PowerShell profile: " + profile.string(), text.substr(0, 240)));
+                    findings.push_back(persistenceFinding("PowerShell profile: " + pathToUtf8(profile), text.substr(0, 240)));
             }
         }
     }
@@ -508,7 +508,7 @@ RemediationPlan buildPlan(const std::string& scanRoot, const std::vector<Finding
     RemediationPlan plan;
     std::error_code ec;
     fs::path root = fs::weakly_canonical(scanRoot, ec);
-    plan.scanRoot = ec ? scanRoot : root.string();
+    plan.scanRoot = ec ? scanRoot : pathToUtf8(root);
     std::set<std::string> plannedFiles;
     for (const auto& finding : findings) {
         RemediationAction action;
@@ -525,9 +525,9 @@ RemediationPlan buildPlan(const std::string& scanRoot, const std::vector<Finding
             if (ec || !pathStartsWith(canonical, root)) action.refusal = "path escapes or cannot be resolved inside scan root";
             else if (isReparsePoint(canonical) || fs::is_symlink(canonical, ec)) action.refusal = "links and reparse points are never quarantined automatically";
             else if (!fs::is_regular_file(canonical, ec)) action.refusal = "target is not a regular file";
-            else if (!plannedFiles.insert(canonical.string()).second)
+            else if (!plannedFiles.insert(pathToUtf8(canonical)).second)
                 action.refusal = "the same file is already covered by an earlier confirmed action";
-            else { action.eligible = true; action.sourcePath = canonical.string(); }
+            else { action.eligible = true; action.sourcePath = pathToUtf8(canonical); }
         }
         plan.actions.push_back(std::move(action));
         ec.clear();
@@ -566,7 +566,7 @@ RemediationResult applyPlan(const RemediationPlan& plan, const std::string& stat
         rec.ruleId = action.ruleId;
         rec.reason = action.reason;
         fs::path stored = store / (rec.id + ".quarantine");
-        rec.storedPath = stored.string();
+        rec.storedPath = pathToUtf8(stored);
 
         fs::copy_file(action.sourcePath, stored, fs::copy_options::none, ec);
         if (ec) { result.errors.push_back(action.sourcePath + ": quarantine copy failed: " + ec.message()); ec.clear(); continue; }
@@ -713,27 +713,27 @@ bool installRepositoryGuards(const std::string& repository, const std::string& a
 
 #if defined(_WIN32)
     std::string exeForShell = abyssExecutable;
-    std::string repoForShell = repo.string();
+    std::string repoForShell = pathToUtf8(repo);
     std::replace(exeForShell.begin(), exeForShell.end(), '\\', '/');
     std::replace(repoForShell.begin(), repoForShell.end(), '\\', '/');
     const std::string hookBody = "#!/bin/sh\nexec \"" + exeForShell + "\" preflight \"" + repoForShell + "\"\n";
     const char* names[] = {"pre-commit", "pre-push"};
 #else
-    const std::string hookBody = "#!/bin/sh\nexec \"" + abyssExecutable + "\" preflight \"" + repo.string() + "\"\n";
+    const std::string hookBody = "#!/bin/sh\nexec \"" + abyssExecutable + "\" preflight \"" + pathToUtf8(repo) + "\"\n";
     const char* names[] = {"pre-commit", "pre-push"};
 #endif
     for (const char* name : names) {
         fs::path hook = hooks / name;
-        if (fs::exists(hook, ec)) { messages.push_back(hook.string() + " preserved (existing hook)"); continue; }
+        if (fs::exists(hook, ec)) { messages.push_back(pathToUtf8(hook) + " preserved (existing hook)"); continue; }
         std::ofstream out(hook, std::ios::binary | std::ios::trunc);
-        if (!out) { error = "cannot write repository guard: " + hook.string(); return false; }
+        if (!out) { error = "cannot write repository guard: " + pathToUtf8(hook); return false; }
         out << hookBody;
         out.close();
 #if !defined(_WIN32)
         fs::permissions(hook, fs::perms::owner_exec | fs::perms::owner_read | fs::perms::owner_write,
                         fs::perm_options::add, ec);
 #endif
-        messages.push_back(hook.string() + " installed");
+        messages.push_back(pathToUtf8(hook) + " installed");
     }
     return true;
 }
@@ -742,7 +742,7 @@ bool removeRepositoryGuards(const std::string& repository, const std::string& ab
                             std::vector<std::string>& messages, std::string& error) {
     fs::path repo(repository);
     std::string exeForShell = abyssExecutable;
-    std::string repoForShell = repo.string();
+    std::string repoForShell = pathToUtf8(repo);
     std::replace(exeForShell.begin(), exeForShell.end(), '\\', '/');
     std::replace(repoForShell.begin(), repoForShell.end(), '\\', '/');
     const std::string ownedBody = "#!/bin/sh\nexec \"" + exeForShell + "\" preflight \"" + repoForShell + "\"\n";
@@ -760,15 +760,15 @@ bool removeRepositoryGuards(const std::string& repository, const std::string& ab
             body.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
         }
         if (body != ownedBody) {
-            messages.push_back(hook.string() + " preserved (not owned by Abyss)");
+            messages.push_back(pathToUtf8(hook) + " preserved (not owned by Abyss)");
             continue;
         }
         std::error_code ec;
         if (!fs::remove(hook, ec) || ec) {
-            error = "cannot remove repository guard: " + hook.string();
+            error = "cannot remove repository guard: " + pathToUtf8(hook);
             return false;
         }
-        messages.push_back(hook.string() + " removed");
+        messages.push_back(pathToUtf8(hook) + " removed");
     }
     return true;
 }

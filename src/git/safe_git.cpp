@@ -1,5 +1,7 @@
 #include "git/safe_git.h"
 
+#include "core/core.h"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -305,23 +307,23 @@ StagedOperation prepareClone(const std::string& remote, const std::string& desti
     std::error_code ec;
     if (fs::exists(destination, ec)) { op.error = "destination already exists"; return op; }
     fs::path stage = fs::path(destination).parent_path() /
-                     (fs::path(destination).filename().string() + ".abyss-stage-" + uniqueSuffix());
-    auto clone = runGit(fs::path(destination).parent_path().string(),
-                        {"clone", "--no-checkout", "--no-recurse-submodules", "--", remote, stage.string()},
+                     (pathToUtf8(fs::path(destination).filename()) + ".abyss-stage-" + uniqueSuffix());
+    auto clone = runGit(pathToUtf8(fs::path(destination).parent_path()),
+                        {"clone", "--no-checkout", "--no-recurse-submodules", "--", remote, pathToUtf8(stage)},
                         std::chrono::seconds(600));
     op.output = clone.output;
     if (!clone.started || clone.timedOut || clone.exitCode != 0) {
         op.error = clone.error.empty() ? "staged git clone failed" : clone.error;
         return op;
     }
-    if (!repositoryConfigSafe(stage.string(), op.error)) return op;
-    auto checkout = runGit(stage.string(), {"checkout", "--force", "--detach", "HEAD"});
+    if (!repositoryConfigSafe(pathToUtf8(stage), op.error)) return op;
+    auto checkout = runGit(pathToUtf8(stage), {"checkout", "--force", "--detach", "HEAD"});
     op.output += checkout.output;
     if (!checkout.started || checkout.timedOut || checkout.exitCode != 0) {
         op.error = "inert checkout into staging failed";
         return op;
     }
-    op.ok = true; op.stagePath = stage.string(); op.targetRef = "HEAD";
+    op.ok = true; op.stagePath = pathToUtf8(stage); op.targetRef = "HEAD";
     return op;
 }
 
@@ -380,14 +382,14 @@ StagedOperation preparePull(const std::string& repository) {
     op.resolvedSha = resolvedSha;
 
     fs::path stage = fs::path(repository).parent_path() /
-                     (fs::path(repository).filename().string() + ".abyss-pull-stage-" + uniqueSuffix());
-    auto worktree = runGit(repository, {"worktree", "add", "--detach", "--no-checkout", stage.string(), op.resolvedSha});
+                     (pathToUtf8(fs::path(repository).filename()) + ".abyss-pull-stage-" + uniqueSuffix());
+    auto worktree = runGit(repository, {"worktree", "add", "--detach", "--no-checkout", pathToUtf8(stage), op.resolvedSha});
     op.output += worktree.output;
     if (worktree.exitCode != 0) { op.error = "could not create detached pull staging tree"; return op; }
-    auto checkout = runGit(stage.string(), {"checkout", "--force", "--detach", op.resolvedSha});
+    auto checkout = runGit(pathToUtf8(stage), {"checkout", "--force", "--detach", op.resolvedSha});
     op.output += checkout.output;
     if (checkout.exitCode != 0) { op.error = "could not materialize fetched tree for scanning"; return op; }
-    op.ok = true; op.stagePath = stage.string();
+    op.ok = true; op.stagePath = pathToUtf8(stage);
     return op;
 }
 

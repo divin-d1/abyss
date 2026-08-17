@@ -227,6 +227,21 @@ bool pathStartsWith(const std::filesystem::path& child, const std::filesystem::p
 // tag than symlinks). Always false on non-Windows builds.
 bool isReparsePoint(const std::filesystem::path& p);
 
+// Converts a filesystem path to a UTF-8 std::string. Use this everywhere
+// instead of std::filesystem::path::string(): on Windows, path::string()
+// converts via the process's ANSI codepage and THROWS std::system_error
+// for any filename containing a character that codepage can't represent
+// (most non-Latin scripts, many accented Latin letters, emoji) -- and
+// since Abyss's job is walking arbitrary real developer machines and
+// repositories, such a filename is not a hypothetical: it is what actually
+// crashed a real system-scan run (an uncaught exception reaching abort(),
+// reported by Windows as exception 0xc0000409). This converts the path's
+// native UTF-16 representation directly to UTF-8 via WideCharToMultiByte,
+// which is lossless for all valid UTF-16 (including surrogate pairs) and
+// never throws for this reason. On non-Windows, path's native encoding is
+// already treated as UTF-8, so this is just path.string().
+std::string pathToUtf8(const std::filesystem::path& p);
+
 // Strips ANSI/control escape sequences and raw control bytes from
 // untrusted text (filenames, evidence excerpts, rule/campaign strings)
 // before it reaches a terminal or log. Printable text (including UTF-8
