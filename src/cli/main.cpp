@@ -970,8 +970,18 @@ int cmdClone(const std::string& remote, const std::string& destination,
         return static_cast<int>(evidence::ExitCode::OperationalFailure);
     }
     auto scan = runScan(staged.stagePath, rulesOverride);
-    reportTo(staged.stagePath, staged.stagePath, scan.report.findings, scan.report.coverage,
-            scan.trust, scan.verdict);
+    // The scope label says "incoming clone, not yet published" rather than
+    // just the bare staging path: git::prepareClone() names the staging
+    // directory <destination-name>.abyss-stage-<suffix>, sitting right next
+    // to the eventual destination with a near-identical name -- a bare path
+    // there reads at a glance like "just the local folder" even though this
+    // is genuinely an isolated copy that has not been placed at
+    // `destination` yet (and never will be if this scan doesn't reach
+    // ALLOW).
+    reportTo(staged.stagePath,
+            "incoming clone from " + remote + ", staged (not yet published to " + destination +
+                "): " + staged.stagePath,
+            scan.report.findings, scan.report.coverage, scan.trust, scan.verdict);
     std::string message;
     const bool allow = scan.verdict.label == "ALLOW";
     const bool published = git::finalizeClone(staged, destination, allow, message);
@@ -994,11 +1004,19 @@ int cmdPull(const std::string& repository, const std::string& rulesOverride) {
         return static_cast<int>(evidence::ExitCode::OperationalFailure);
     }
     auto incoming = runScan(staged.stagePath, rulesOverride);
-    // Reported against `repository`, not staged.stagePath: on ALLOW,
-    // finalizePull removes the staging worktree below, which would take a
-    // results file written there with it.
-    reportTo(repository, staged.stagePath, incoming.report.findings, incoming.report.coverage,
-            incoming.trust, incoming.verdict);
+    // The results FILE is written under `repository` (not staged.stagePath):
+    // on ALLOW, finalizePull removes the staging worktree below, which would
+    // take a results file written there with it. But the scope LABEL shown
+    // to the user must not be the bare staging path -- git::preparePull()
+    // names it <repository-name>.abyss-pull-stage-<suffix>, a sibling
+    // directory with a near-identical name to `repository`, which at a
+    // glance reads as "just my local folder" even though this scan never
+    // touches the live working directory: it evaluates an isolated staged
+    // copy of exactly what `git pull` would bring in, before any of it is
+    // merged.
+    reportTo(repository,
+            "incoming changes for " + repository + ", staged (not yet merged) at " + staged.stagePath,
+            incoming.report.findings, incoming.report.coverage, incoming.trust, incoming.verdict);
     std::string message;
     const bool allow = incoming.verdict.label == "ALLOW";
     const bool merged = git::finalizePull(repository, staged, allow, message);

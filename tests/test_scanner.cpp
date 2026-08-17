@@ -127,6 +127,29 @@ ABYSS_TEST("credentials: a real oauth_token value with digits is still caught, n
     ABYSS_CHECK(hasRule(findings, "core.credential_exposure"));
 }
 
+ABYSS_TEST("credentials: a dotted property-access chain assigned to a password field is not a secret") {
+    // Real-world regression: an ordinary React onChange handler --
+    // `setPassword((p) => ({ ...p, currentPassword: e.target.value }))` --
+    // was being redacted and reported as a leaked credential. The value
+    // capture is "e.target.value", which is letters, dots, and no digits;
+    // the bare-identifier filter previously only allowed letters/underscore,
+    // so dotted chains like this and `localStorage.getItem` slipped through.
+    auto findings = scanCredentialExposure(
+        "Settings.tsx", "onChange={(e) => setPassword((p) => ({ ...p, currentPassword: e.target.value }))}\n");
+    ABYSS_CHECK(!hasRule(findings, "core.credential_exposure"));
+}
+
+ABYSS_TEST("credentials: a token read via a long dotted getter call is not a secret") {
+    // `localStorage.getItem(ACCESS_KEY)` matches "accessToken" as a
+    // case-insensitive, separator-optional key name; the value-charset
+    // regex's function-call guard is itself defeatable by backtracking (it
+    // can always shave the last character off the value to dodge the "not
+    // immediately followed by (" lookahead), so the real backstop is the
+    // post-match bare-identifier filter -- which must accept dotted chains.
+    auto findings = scanCredentialExposure("client.ts", "  const accessToken = localStorage.getItem(ACCESS_KEY);\n");
+    ABYSS_CHECK(!hasRule(findings, "core.credential_exposure"));
+}
+
 ABYSS_TEST("text heuristics: whitespace concealment gap is detected") {
     std::string content = readFixtureText("polinrider-v1-marker.js.sample");
     auto findings = scanTextHeuristics("polinrider-v1-marker.js", content, ScanThresholds::withDefaults());
@@ -163,6 +186,57 @@ ABYSS_TEST("text heuristics: the same padded-pipe shape outside a .md file still
     std::string content = "const x = 1;" + std::string(60, ' ') + "|payload|more|\n";
     auto findings = scanTextHeuristics("script.js", content, ScanThresholds::withDefaults());
     ABYSS_CHECK(hasRule(findings, "core.concealment_whitespace_gap"));
+}
+
+ABYSS_TEST("text heuristics: a long npm-registry URL is not a false-positive long-token/encoded-payload finding") {
+    // Real-world regression: package-lock.json "resolved" URLs for scoped,
+    // platform-specific binary packages (@unrs/resolver-binding-*) routinely
+    // exceed 120 unbroken characters -- completely ordinary, machine-
+    // generated, human-readable URLs, not encoded payload data.
+    std::string content =
+        "      \"resolved\": "
+        "\"https://registry.npmjs.org/@unrs/resolver-binding-linux-arm-gnueabihf/-/"
+        "resolver-binding-linux-arm-gnueabihf-1.12.2.tgz\",\n";
+    auto findings = scanTextHeuristics("package-lock.json", content, ScanThresholds::withDefaults());
+    ABYSS_CHECK(!hasRule(findings, "core.long_token"));
+}
+
+ABYSS_TEST("text heuristics: a genuinely unbroken non-URL token still triggers long-token") {
+    // The URL exemption must not become a blanket "long token = fine"
+    // pass -- only tokens actually shaped like a URL are exempted.
+    std::string content = std::string(150, 'a') + "\n";
+    auto findings = scanTextHeuristics("script.js", content, ScanThresholds::withDefaults());
+    ABYSS_CHECK(hasRule(findings, "core.long_token"));
+}
+
+ABYSS_TEST("text heuristics: a long word-spaced JSX/Tailwind line is not a false-positive high-entropy finding") {
+    // Real-world regression: ordinary React/Tailwind JSX lines (long
+    // className strings, arrow-function handlers, bracketed arbitrary
+    // values) commonly cross 4.8 bits/char purely from character-class
+    // variety, despite being completely normal, human-authored, non-
+    // obfuscated source with regular word-spacing throughout.
+    std::string content =
+        "            <Link href=\"/inventory/adjustments\" className=\"flex items-center gap-2 "
+        "rounded-[3px] border border-gray-200 bg-white px-4 py-2 text-[12px] font-bold text-gray-600 "
+        "hover:bg-gray-50 transition-colors\">\n";
+    ABYSS_CHECK(content.size() >= ScanThresholds::withDefaults().highEntropyMinLineLength);
+    auto findings = scanTextHeuristics("page.tsx", content, ScanThresholds::withDefaults());
+    ABYSS_CHECK(!hasRule(findings, "core.high_entropy_line"));
+}
+
+ABYSS_TEST("text heuristics: a dense unbroken high-entropy payload still triggers high-entropy") {
+    // The whitespace-ratio gate must not become a blanket pass for long
+    // lines -- a genuinely dense, near-zero-whitespace high-entropy blob
+    // (the actual shape of a base64/packed payload) must still fire.
+    std::string content = "const payload = \"";
+    // A long, high-entropy-looking pseudo-base64 run with no internal
+    // whitespace and no digits pattern repetition.
+    const char* chars = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/AbCdEfGhIjKlMnOpQrStUvWxYz9876543210";
+    for (int i = 0; i < 4; i++) content += chars;
+    content += "\";\n";
+    ABYSS_CHECK(content.size() >= ScanThresholds::withDefaults().highEntropyMinLineLength);
+    auto findings = scanTextHeuristics("bundle.js", content, ScanThresholds::withDefaults());
+    ABYSS_CHECK(hasRule(findings, "core.high_entropy_line"));
 }
 
 ABYSS_TEST("text heuristics: network + exec-sink combo is detected together, not separately") {
@@ -275,6 +349,41 @@ ABYSS_TEST("invisible unicode: clean ASCII file produces no findings") {
     std::string content = readFixtureText("clean-config.js.sample");
     auto findings = scanInvisibleUnicode("clean-config.js", content);
     ABYSS_CHECK(findings.empty());
+}
+
+ABYSS_TEST("invisible unicode: an ordinary emoji picker array is not false-positive concealment") {
+    // Real-world regression: a chat UI's emoji picker data
+    // (["\xE2\x9C\x8C\xEF\xB8\x8F", "\xE2\x98\x9D\xEF\xB8\x8F", ...] -- victory hand, index-pointing-up, each
+    // followed by U+FE0F VARIATION SELECTOR-16 to request emoji
+    // presentation) is completely standard, human-visible Unicode, not
+    // steganographic concealment -- but every VS16 codepoint used to count
+    // toward the concealment threshold regardless of context.
+    std::string content =
+        "const gestures = [\"\xE2\x9C\x8C\xEF\xB8\x8F\", \"\xE2\x98\x9D\xEF\xB8\x8F\", \"\xE2\x9C\x8D\xEF\xB8\x8F\", "
+        "\"\xE2\x9D\xA3\xEF\xB8\x8F\"];\n";
+    auto findings = scanInvisibleUnicode("Messages.tsx", content);
+    ABYSS_CHECK(!hasRule(findings, "core.invisible_unicode_concealment"));
+}
+
+ABYSS_TEST("invisible unicode: variation selectors NOT adjacent to an emoji base still count as concealment") {
+    // The emoji exemption must not become a blanket pass for U+FE0F/ZWJ --
+    // only when immediately preceded by a recognized emoji base character.
+    // Two VS16 codepoints glued directly onto plain ASCII letters (the
+    // actual concealment shape: invisible characters inserted into text to
+    // defeat literal string matching) must still be flagged.
+    std::string content = "const isAdmin = false\xEF\xB8\x8F\xEF\xB8\x8F;\n";
+    auto findings = scanInvisibleUnicode("payload.js", content);
+    ABYSS_CHECK(hasRule(findings, "core.invisible_unicode_concealment"));
+}
+
+ABYSS_TEST("invisible unicode: zero-width space still counts as concealment even near an emoji") {
+    // Only VS16/VS15 (U+FE0E/FE0F) and ZWJ (U+200D) get the emoji-adjacency
+    // exemption -- zero-width space/non-joiner and the standalone
+    // word-joiner have no legitimate emoji-sequence role and must always be
+    // flagged, regardless of what precedes them.
+    std::string content = "const x = \"\xE2\x9D\xA4\xE2\x80\x8B\xE2\x80\x8B\";\n"; // heart + 2x U+200B
+    auto findings = scanInvisibleUnicode("payload2.js", content);
+    ABYSS_CHECK(hasRule(findings, "core.invisible_unicode_concealment"));
 }
 
 ABYSS_TEST("repository discovery: detects .git directory without descending into object storage") {
