@@ -1,0 +1,18 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/src"
+            ],
+            "defines": [
+                "WIN32",
+                "_WINDOWS"
+            ],
+            "windowsSdkVersion": "10.0",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "windows-msvc-x64"
+        }
+    ],
+    "version": 4
+}
