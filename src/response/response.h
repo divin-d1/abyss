@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -21,9 +22,19 @@ struct HostDiscovery {
 
 // Finds developer repositories without reading repository-controlled code.
 // The walk is bounded by depth and directory count so a system scan cannot
-// accidentally consume an entire workstation indefinitely.
+// accidentally consume an entire workstation indefinitely. This walk is a
+// single sequential directory-metadata traversal (find the repos), separate
+// from the per-repository file scan that follows it (which does run
+// multithreaded -- see scanner::scanRepository). More threads do not
+// meaningfully speed up one directory tree's metadata walk against one
+// physical disk, so onProgress exists to make this phase visibly alive
+// (called throughout the walk with the running directory count) rather
+// than to make it faster: without it, a scan of a real machine's whole
+// directory tree can run for a while with zero output, which looks
+// indistinguishable from a hang.
 HostDiscovery discoverHostTargets(std::size_t maxDepth = 7,
-                                  std::size_t maxDirectories = 250000);
+                                  std::size_t maxDirectories = 250000,
+                                  std::function<void(std::size_t directoriesVisited)> onProgress = {});
 
 // Inspects native Windows persistence locations as data. On other platforms
 // this returns an empty list; the public release target is Windows 10/11.

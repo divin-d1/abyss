@@ -369,6 +369,32 @@ private:
     bool announcedThreads_ = false;
 };
 
+// Directory discovery (finding WHERE the repositories/developer locations
+// are, before any file is scanned) is a single sequential filesystem-
+// metadata walk -- unlike file analysis, it does not benefit from more
+// threads, so this only exists to prove the walk is progressing rather
+// than to speed it up. Without it, system-scan can run for a while with
+// zero output while it walks a real machine's directory tree, which is
+// indistinguishable from a hang.
+class DiscoveryProgressPrinter {
+public:
+    void operator()(std::size_t directoriesVisited) {
+        auto now = std::chrono::steady_clock::now();
+        if (printed_ && now - last_ < std::chrono::milliseconds(300)) return;
+        std::cerr << "\r  discovering: " << directoriesVisited << " director" << (directoriesVisited == 1 ? "y" : "ies")
+                  << " checked" << std::string(10, ' ') << "\r" << std::flush;
+        last_ = now;
+        printed_ = true;
+    }
+    ~DiscoveryProgressPrinter() {
+        if (printed_) std::cerr << "\r" << std::string(60, ' ') << "\r" << std::flush;
+    }
+
+private:
+    std::chrono::steady_clock::time_point last_{};
+    bool printed_ = false;
+};
+
 // Shared by runScan() (one engine load per call) and cmdScanAll() (one
 // engine load reused across every project in a parent directory) so
 // scanning many projects doesn't reload and re-verify the same rule pack
@@ -451,12 +477,19 @@ int cmdScan(const std::string& path, bool jsonOutput, const std::string& rulesOv
 }
 
 int cmdSystemScan(bool jsonOutput, const std::string& rulesOverride) {
-    auto discovery = response::discoverHostTargets();
+    std::cerr << "[1/4] Discovering repositories, VS Code installs, and persistence locations...\n";
+    DiscoveryProgressPrinter discoveryProgress;
+    auto discovery = response::discoverHostTargets(7, 250000, std::ref(discoveryProgress));
+    std::cerr << "      found " << discovery.targets.size() << " location(s) to scan.\n";
+
     auto loaded = loadEngine(rulesOverride);
     scanner::ScanReport combined;
     combined.coverage.directoryErrors = discovery.errors.size();
+    std::size_t targetIndex = 0;
     for (const auto& target : discovery.targets) {
-        std::cerr << "Scanning " << sanitizeForOutput(target.path) << "...\n";
+        ++targetIndex;
+        std::cerr << "[2/4] (" << targetIndex << "/" << discovery.targets.size() << ") Scanning "
+                  << sanitizeForOutput(target.path) << "...\n";
         ScanProgressPrinter progress;
         scanner::ScanOptions options;
         options.thresholds = loaded.thresholds;
@@ -472,12 +505,19 @@ int cmdSystemScan(bool jsonOutput, const std::string& rulesOverride) {
         combined.coverage.filesChangedDuringScan += report.coverage.filesChangedDuringScan;
         combined.coverage.gitDetected = combined.coverage.gitDetected || report.coverage.gitDetected;
     }
+
+    std::cerr << "[3/4] Checking persistence locations (registry Run keys, services, scheduled tasks, "
+                 "PowerShell profiles)...\n";
     auto persistence = response::inspectPersistence();
     combined.findings.insert(combined.findings.end(), persistence.begin(), persistence.end());
+
+    std::cerr << "[4/4] Checking installed VS Code extensions...\n";
     for (const auto& ext : vscode::discoverExtensions(vscode::defaultExtensionsRoot())) {
         auto extFindings = vscode::scanExtensionRecord(ext);
         combined.findings.insert(combined.findings.end(), extFindings.begin(), extFindings.end());
     }
+
+    std::cerr << "Compiling report...\n";
     auto verdict = evidence::computeVerdict(combined.coverage, combined.findings, loaded.trust);
     if (jsonOutput) {
         evidence::writeFindingsJsonl(combined.findings, std::cout);

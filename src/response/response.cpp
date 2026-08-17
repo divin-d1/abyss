@@ -214,7 +214,8 @@ std::string defaultStateRoot() {
     return pathToUtf8((fs::temp_directory_path() / "Abyss-development-state"));
 }
 
-HostDiscovery discoverHostTargets(std::size_t maxDepth, std::size_t maxDirectories) {
+HostDiscovery discoverHostTargets(std::size_t maxDepth, std::size_t maxDirectories,
+                                  std::function<void(std::size_t)> onProgress) {
     HostDiscovery result;
     std::vector<fs::path> roots;
 
@@ -291,6 +292,7 @@ HostDiscovery discoverHostTargets(std::size_t maxDepth, std::size_t maxDirectori
             Pending current = std::move(pending.back());
             pending.pop_back();
             ++result.directoriesVisited;
+            if (onProgress) onProgress(result.directoriesVisited);
 
             if (isRepositoryDir(current.path)) {
                 std::string key = canonicalString(current.path, ec);
