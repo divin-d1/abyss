@@ -1,0 +1,7 @@
+# Inert fixture — a legitimate release-automation pattern: force-pushing a
+# rebuilt release branch/tag. This script never rewrites a commit, so it
+# must NOT trigger the amend-plus-force-push propagation pattern.
+git fetch origin
+git checkout release
+git reset --hard origin/main
+git push --force origin release

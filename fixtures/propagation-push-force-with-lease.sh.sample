@@ -1,0 +1,4 @@
+# Inert fixture — models the amend+force-push anchor using the long-form
+# --force-with-lease flag with a ref argument attached.
+git commit --amend --no-edit
+git push --force-with-lease=refs/heads/main:0123456789abcdef origin main

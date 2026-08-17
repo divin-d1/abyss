@@ -1,0 +1,9 @@
+// Legitimate dynamic plugin loader — require() target is validated against
+// an explicit allowlist before use. Included as a false-positive check for
+// the indirect-require heuristic (should NOT trigger core.indirect_require).
+const ALLOWED = new Set(["./plugins/a", "./plugins/b"]);
+function loadPlugin(name) {
+  if (!ALLOWED.has(name)) throw new Error("unknown plugin");
+  return require(name);
+}
+module.exports = { loadPlugin };

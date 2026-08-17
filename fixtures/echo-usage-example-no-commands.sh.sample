@@ -1,0 +1,8 @@
+#!/bin/sh
+# Inert fixture -- a help/usage script that ECHOES example command text
+# for a human to read. None of the printed lines are actually executed.
+echo "Example of what NOT to do:"
+echo "  Set-Date -Date '2024-01-01'"
+echo "  git commit --amend --no-edit --no-verify"
+echo "  git push --force --no-verify origin HEAD"
+echo "This script performs no git operations itself."

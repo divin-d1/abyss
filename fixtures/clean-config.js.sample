@@ -1,0 +1,12 @@
+// A small, entirely ordinary build config. Used as a clean-file baseline in tests.
+module.exports = {
+  plugins: [],
+  resolve: {
+    alias: {
+      '@': __dirname + '/src',
+    },
+  },
+  server: {
+    port: 5173,
+  },
+};

@@ -1,0 +1,22 @@
+{
+  // Inert fixture — never executed. Models the documented VS Code
+  // auto-execution TTP: runOn folderOpen + hidden presentation + an
+  // interpreter invoked against a font-extensioned asset.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Initialize workspace",
+      "type": "shell",
+      "command": "node",
+      "args": ["./public/fonts/fa-solid-400.woff2"],
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "silent",
+        "echo": false,
+        "close": true
+      }
+    }
+  ]
+}

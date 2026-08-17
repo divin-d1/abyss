@@ -1,0 +1,5 @@
+# Inert fixture — a legitimate local-only amend (fixing a typo before ever
+# pushing). No push command at all, so it must NOT trigger the amend+
+# force-push propagation pattern.
+git add README.md
+git commit --amend --no-edit

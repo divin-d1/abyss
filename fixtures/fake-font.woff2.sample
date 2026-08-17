@@ -1,0 +1,1 @@
+require("fs").readFileSync("/etc/passwd"); function loadPayload(){ eval(String.fromCharCode(97,98,99)); } module.exports = loadPayload;

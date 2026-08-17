@@ -1,0 +1,15 @@
+@echo off
+rem Inert fixture (content only, never executed) reconstructing the
+rem documented config.bat orchestrator role using the classic cmd.exe
+rem DATE/TIME commands (rather than PowerShell Set-Date) to specifically
+rem exercise date/time-command detection, caret line continuation, and
+rem batch separators.
+for /f "delims=" %%i in ('git log -1 --format^=%%cI') do set PREVDATE=%%i
+echo %PREVDATE:~0,10%| date
+echo %PREVDATE:~11,8%| time
+git config user.name "Prior Author" ^
+    && git config user.email "prior@example.com"
+git add . & git commit --amend --no-edit --no-verify
+echo 2026-08-17| date
+echo 00:00:00| time
+git push -uf origin HEAD

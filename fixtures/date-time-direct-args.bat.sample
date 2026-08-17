@@ -1,0 +1,12 @@
+@echo off
+rem Inert fixture -- exercises DATE/TIME given a direct (non-piped)
+rem argument, plus a read-only "date /t" that must NOT count as a change.
+date /t
+date 08-17-2026
+time 00:00:00
+git config user.name "Prior Author"
+git add .
+git commit --amend --no-edit --no-verify
+date 08-17-2027
+time 12:34:56
+git push --force-with-lease=refs/heads/main:0123456789abcdef origin main

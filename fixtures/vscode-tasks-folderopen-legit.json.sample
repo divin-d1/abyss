@@ -1,0 +1,20 @@
+{
+  // Inert fixture — a benign, visible folderOpen task (starts a dev server
+  // in the integrated terminal). folderOpen alone must not be flagged as
+  // malicious (see docs/THREAT_MODEL.md false-positive philosophy).
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start dev server",
+      "type": "npm",
+      "script": "dev",
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    }
+  ]
+}

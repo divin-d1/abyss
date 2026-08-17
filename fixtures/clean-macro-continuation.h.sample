@@ -1,0 +1,5 @@
+// Padded backslash line-continuations for column alignment — a common,
+// benign C/C++ macro idiom. Must NOT trigger core.concealment_whitespace_gap.
+#define EXAMPLE_MACRO(name)                                                                                 \
+    static void example_fn_##name();                                                                       \
+    static void example_fn_##name()

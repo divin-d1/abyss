@@ -1,0 +1,15 @@
+@rem Inert fixture — content only, never executed by Abyss or its tests.
+@rem Models the full documented PolinRider Git propagation batch sequence:
+@rem read prior commit metadata -> save+roll clock back -> spoof identity ->
+@rem stage -> amend --no-verify -> restore clock -> force-push --no-verify.
+@echo off
+for /f "delims=" %%i in ('git log -1 --format^=%%cI') do set PREVDATE=%%i
+for /f "delims=" %%i in ('git log -1 --format^=%%an') do set PREVAUTHOR=%%i
+for /f "delims=" %%i in ('git log -1 --format^=%%ae') do set PREVEMAIL=%%i
+powershell -Command "Set-Date -Date '%PREVDATE%'"
+git config user.name "%PREVAUTHOR%"
+git config user.email "%PREVEMAIL%"
+git add .
+git commit --amend --no-edit --no-verify
+powershell -Command "Set-Date -Date (Get-Date)"
+git push --force --no-verify origin HEAD

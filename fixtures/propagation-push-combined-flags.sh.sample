@@ -1,0 +1,5 @@
+# Inert fixture — models the documented amend+force-push anchor using a
+# combined short-option push flag (-uf) instead of --force, with only one
+# corroborating signal (--no-verify). No clock manipulation.
+git commit --amend --no-edit --no-verify
+git push -uf origin HEAD

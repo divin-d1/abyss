@@ -1,0 +1,10 @@
+@echo off
+rem This script only documents the PolinRider propagation pattern in
+rem comments for a security-training exercise. It never actually runs
+rem git commit --amend, never runs git push -f, never calls Set-Date,
+rem date, time, wmic, or w32tm. Every mention below is comment text.
+::
+:: Full documented sequence: Set-Date -> git commit --amend --no-verify
+:: -> Set-Date restore -> git push --force --no-verify
+::
+echo This training script intentionally performs no real actions.

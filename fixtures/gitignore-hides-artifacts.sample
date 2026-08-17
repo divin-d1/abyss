@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+temp_auto_push.bat
+config.bat
+*.log
